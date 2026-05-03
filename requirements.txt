@@ -27,6 +27,7 @@ h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
 idna==3.13
+ImageIO==2.37.3
 ipykernel==7.2.0
 ipython==9.13.0
 ipython_pygments_lexers==1.1.1
@@ -53,6 +54,7 @@ jupytext==1.19.1
 kaggle==2.1.0
 kagglesdk==0.1.22
 lark==1.3.1
+lazy-loader==0.5
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 matplotlib-inline==0.2.1
@@ -109,6 +111,8 @@ rfc3339-validator==0.1.4
 rfc3986-validator==0.1.1
 rfc3987-syntax==1.1.0
 rpds-py==0.30.0
+scikit-image==0.26.0
+scipy==1.17.1
 Send2Trash==2.1.0
 six==1.17.0
 soupsieve==2.8.3
@@ -116,6 +120,7 @@ stack-data==0.6.3
 sympy==1.14.0
 terminado==0.18.1
 text-unidecode==1.3
+tifffile==2026.3.3
 tinycss2==1.4.0
 torch==2.11.0
 torchvision==0.26.0
