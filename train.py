@@ -6,6 +6,7 @@ from dataset.dataset import VimeoDataset
 from model.model import VideoEnhancementModel
 from utils.metrics import Evaluator
 import os
+from pytorch_msssim import SSIM 
 
 def train():
     # Setup Device
@@ -17,7 +18,6 @@ def train():
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=16)
 
     # Initialize Model
-    #model = VideoEnhancementModel().to(device)
     model = VideoEnhancementModel()
     evaluator = Evaluator(logFile="checkpoints/metrics_log.csv")
 
@@ -27,8 +27,11 @@ def train():
 
     model = model.to(device)
 
-    # Define Loss and Optimizer
-    criterion = nn.MSELoss()
+    # --- DEFINED SSIM MODULE INSTEAD OF MSE ---
+    # Note: data_range=1.0 assumes your image tensors are between 0 and 1. 
+    # If your dataset outputs 0-255, change data_range to 255.0
+    ssim_module = SSIM(data_range=1.0, size_average=True, channel=3)
+    
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # Training Configuration
@@ -39,9 +42,7 @@ def train():
 
     #  WEIGHT PERSISTENCE & GLOBAL BEST SETUP
 
-
     # Save starting weights
-    #torch.save(model.state_dict(), 'checkpoints/starting_weights.pth')
     state_to_save = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
     torch.save(state_to_save, 'checkpoints/starting_weights.pth')
     print("Saved checkpoints/starting_weights.pth")
@@ -68,7 +69,12 @@ def train():
 
             # Forward pass
             output = model(inputs)
-            loss = criterion(output, target)
+            
+            # --- CALCULATE SSIM LOSS ---
+            # We subtract from 1 because we want the optimizer to push the loss DOWN toward 0, 
+            # which pushes the actual SSIM UP toward 1.0 (perfect similarity)
+            ssim_score = ssim_module(output, target)
+            loss = 1 - ssim_score
 
             # Backward pass and Optimization
             optimizer.zero_grad()
@@ -80,7 +86,7 @@ def train():
 
             # Log progress
             if batch_idx % 10 == 0:
-                print(f"Batch {batch_idx}/{len(dataloader)} | Loss: {loss.item():.6f}")
+                print(f"Batch {batch_idx}/{len(dataloader)} | Loss (1-SSIM): {loss.item():.6f}")
 
         #  END OF EPOCH CHECKPOINTING
         # Calculate the average loss across the whole epoch
@@ -92,7 +98,6 @@ def train():
         evaluator.logEpochData(epoch + 1, epoch_loss, avg_psnr, avg_ssim)
 
         # Save latest weights (for  crash recovery)
-        #torch.save(model.state_dict(), 'checkpoints/latest_weights.pth')
         state_to_save = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
         torch.save(state_to_save, 'checkpoints/latest_weights.pth')
         print("Saved checkpoints/latest_weights.pth")
@@ -106,7 +111,7 @@ def train():
             with open(loss_file_path, 'w') as f:
                 f.write(str(best_loss))
 
-            print(f"🎉 NEW ALL-TIME BEST! Loss dropped to {best_loss:.6f}. Saved best_weights.pth")
+            print(f"NEW ALL-TIME BEST! Loss dropped to {best_loss:.6f}. Saved best_weights.pth")
         else:
             print(f"Loss ({epoch_loss:.6f}) did not beat the all-time best ({best_loss:.6f}).")
 
