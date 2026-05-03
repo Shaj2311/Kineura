@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from dataset.dataset import VimeoDataset
 from model.model import VideoEnhancementModel
+from utils.metrics import Evaluator
 import os
 
 def train():
@@ -13,10 +14,12 @@ def train():
 
     # Initialize Dataset and DataLoader
     dataset = VimeoDataset(root_dir='./data/vimeo_triplet', is_train=True)
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=16, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=16)
 
     # Initialize Model
+    #model = VideoEnhancementModel().to(device)
     model = VideoEnhancementModel()
+    evaluator = Evaluator(logFile="checkpoints/metrics_log.csv")
 
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs!")
@@ -31,19 +34,22 @@ def train():
     # Training Configuration
     num_epochs = 5
 
-    # Automatically creating  folder if don  exist 
+    # Automatically creating  folder if don  exist
     os.makedirs('checkpoints', exist_ok=True)
 
-    #  WEIGHT PERSISTENCE & GLOBAL BEST SETUP 
+    #  WEIGHT PERSISTENCE & GLOBAL BEST SETUP
+
 
     # Save starting weights
-    init_state = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
-    torch.save(init_state, 'checkpoints/starting_weights.pth')
+    #torch.save(model.state_dict(), 'checkpoints/starting_weights.pth')
+    state_to_save = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
+    torch.save(state_to_save, 'checkpoints/starting_weights.pth')
     print("Saved checkpoints/starting_weights.pth")
 
-    # 2. Check for existing best loss
+    # Check for existing best loss
     loss_file_path = 'checkpoints/best_loss.txt'
-    best_loss = float('inf')
+    best_loss = float('inf') # Default to infinity if  we've never run this before
+
     if os.path.exists(loss_file_path):
         with open(loss_file_path, 'r') as f:
             best_loss = float(f.read().strip())
@@ -60,11 +66,11 @@ def train():
         for batch_idx, (inputs, target) in enumerate(dataloader):
             inputs, target = inputs.to(device), target.to(device)
 
-            # Forward Pass
+            # Forward pass
             output = model(inputs)
             loss = criterion(output, target)
 
-            # Backward pass and optimization
+            # Backward pass and Optimization
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -72,6 +78,7 @@ def train():
             # Add this batch's loss to running total
             running_loss += loss.item()
 
+            # Log progress
             if batch_idx % 10 == 0:
                 print(f"Batch {batch_idx}/{len(dataloader)} | Loss: {loss.item():.6f}")
 
@@ -80,12 +87,17 @@ def train():
         epoch_loss = running_loss / len(dataloader)
         print(f"Epoch {epoch+1} Average Loss: {epoch_loss:.6f}")
 
-        # 3. Save latest weights (for  crash recovery)
-        current_state = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
-        torch.save(current_state, 'checkpoints/latest_weights.pth')
+        # Calculate metrics for the last batch of the epoch
+        avg_psnr, avg_ssim = evaluator.calculateBatchMetrics(target, output)
+        evaluator.logEpochData(epoch + 1, epoch_loss, avg_psnr, avg_ssim)
+
+        # Save latest weights (for  crash recovery)
+        #torch.save(model.state_dict(), 'checkpoints/latest_weights.pth')
+        state_to_save = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
+        torch.save(state_to_save, 'checkpoints/latest_weights.pth')
         print("Saved checkpoints/latest_weights.pth")
 
-        # 4. Save best weights (ONLY if it beats all-time high score)
+        # Save best weights (ONLY if it beats all-time high score)
         if epoch_loss < best_loss:
             best_loss = epoch_loss
             state_to_save = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
@@ -94,9 +106,9 @@ def train():
             with open(loss_file_path, 'w') as f:
                 f.write(str(best_loss))
 
-            print(f"🎉 NEW ALL-TIME BEST! Loss: {best_loss:.6f}. Saved best_weights.pth")
+            print(f"🎉 NEW ALL-TIME BEST! Loss dropped to {best_loss:.6f}. Saved best_weights.pth")
         else:
-            print(f"Loss ({epoch_loss:.6f}) did not beat best ({best_loss:.6f}).")
+            print(f"Loss ({epoch_loss:.6f}) did not beat the all-time best ({best_loss:.6f}).")
 
     print("Training pipeline complete!")
 
