@@ -13,10 +13,10 @@ st.set_page_config(layout="wide", page_title="Kineura Frame Predictor")
 def load_model():
     # Initialize model
     model = VideoEnhancementModel()
-    
+
     # Get best weights
-    checkpoint_path = 'checkpoints/best_weights.pth' 
-    
+    checkpoint_path = 'checkpoints/best_weights.pth'
+
     # Try to load weights
     try:
         state_dict = torch.load(checkpoint_path, map_location='cuda')
@@ -34,35 +34,62 @@ video_file = st.sidebar.file_uploader("Upload Video", type=['mp4', 'mov', 'avi']
 if video_file:
     # Save uploaded file locally to read with OpenCV
     with open("temp_video.mp4", "wb") as f:
-        f.write(video_file.read())
-    
+        f.write(video_file.getbuffer())
+
     cap = cv2.VideoCapture("temp_video.mp4")
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Top section: Triplet slider
     st.header("Step-by-Step Triplet Validation")
-    idx = st.slider("Select Triplet Start Frame", 0, total_frames - 3, 0)
+    idx = st.slider("Select Triplet Start Frame", 0, total_frames - 3 - 1, 0)
 
     # Grab a triplet
-    frames = []
+    frames_bgr = []
     for i in range(idx, idx + 3):
         cap.set(cv2.CAP_PROP_POS_FRAMES, i)
         ret, frame = cap.read()
         if ret:
-            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            frames_bgr.append(frame)
+
+    cap.release()
+
+    # Frame formatting and frame prediction
+
+    # Load model
+    model = load_model()
+    pred = None
+    if model is not None and len(frames_bgr) >= 2:
+        # Resize/Format for model (448x256)
+        f1 = cv2.resize(frames_bgr[0], (448, 256))
+        f2 = cv2.resize(frames_bgr[1], (448, 256))
+        
+        # Color and Tensor conversion
+        t1 = torch.from_numpy(cv2.cvtColor(f1, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float() / 255.0
+        t2 = torch.from_numpy(cv2.cvtColor(f2, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float() / 255.0
+        
+        # Pass to model
+        input_tensor = torch.cat([t1, t2], dim=0).unsqueeze(0).to('cuda')
+        with torch.no_grad():
+            output = model(input_tensor)
+        
+        # Post-process back to image
+        pred = output.squeeze(0).permute(1, 2, 0).cpu().numpy()
+        pred = np.clip(pred * 255, 0, 255).astype(np.uint8)
+        
+        # Resize back to match original video for display
+        h_orig, w_orig = frames_bgr[0].shape[:2]
+        pred = cv2.resize(pred, (w_orig, h_orig))
 
     # Display triplet
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.image(frames[0], caption="Frame 1 (Input)")
+        st.image(cv2.cvtColor(frames_bgr[0], cv2.COLOR_BGR2RGB), caption="Frame 1 (Input)")
     with col2:
-        st.image(frames[1], caption="Frame 2 (Input)")
+        st.image(cv2.cvtColor(frames_bgr[1], cv2.COLOR_BGR2RGB), caption="Frame 2 (Input)")
     with col3:
-        # TODO
-        # Placeholder for Prediction Logic
-        # pred = model.predict(frames[0], frames[1])
-        st.image(frames[2], caption="Frame 3 (Ground Truth)")
-        st.image(frames[2], caption="Frame 3 (AI Predicted)") # Replace with 'pred', keeping the same as frame 3 for now
+        st.image(cv2.cvtColor(frames_bgr[2], cv2.COLOR_BGR2RGB), caption="Frame 3 (Original)")
+        if pred is not None:
+            st.image(pred, caption="Frame 3 (AI Predicted)") 
 
     st.divider()
 
