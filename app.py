@@ -3,6 +3,7 @@ import cv2
 import torch
 import numpy as np
 from PIL import Image
+from model.model import VideoEnhancementModel
 
 # Page config
 st.set_page_config(layout="wide", page_title="Kineura Frame Predictor")
@@ -10,11 +11,22 @@ st.set_page_config(layout="wide", page_title="Kineura Frame Predictor")
 # Load model
 @st.cache_resource
 def load_model():
-    # TODO
-    # model = ModelClass()
-    # model.load_state_dict(torch.load('best_weights.pth'))
-    # model.eval().to('cuda')
-    return "Model Loaded" # Placeholder
+    # Initialize model
+    model = VideoEnhancementModel()
+    
+    # Get best weights
+    checkpoint_path = 'checkpoints/best_weights.pth' 
+    
+    # Try to load weights
+    try:
+        state_dict = torch.load(checkpoint_path, map_location='cuda')
+        model.load_state_dict(state_dict)
+        model.to('cuda')
+        model.eval() # Set to evaluation mode
+        return model
+    except FileNotFoundError:
+        st.error(f"Checkpoint not found at {checkpoint_path}. Check your path!")
+        return None
 
 # Video handling
 video_file = st.sidebar.file_uploader("Upload Video", type=['mp4', 'mov', 'avi'])
