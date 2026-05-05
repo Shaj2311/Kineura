@@ -100,8 +100,13 @@ if video_file:
     # We use the same padding logic as the slider to keep portrait videos small
     # [Padding, Original, Predicted, Padding]
     v_pad_l, v_col1, v_col2, v_pad_r = st.columns([0.5, 1, 1, 0.5])
-    
+
     output_vid = "ai_processed_video.mp4"
+    # Reset generated video if a new file is uploaded
+    if "last_uploaded" not in st.session_state or st.session_state.last_uploaded != video_file.name:
+        if os.path.exists(output_vid):
+            os.remove(output_vid)
+        st.session_state.last_uploaded = video_file.name
 
     with v_col1:
         st.subheader("Original")
@@ -109,14 +114,14 @@ if video_file:
         st.video(video_file)
         
     with v_col2:
-        st.subheader("With Predicted Frames")
+        st.subheader("Repaired")
         
         if os.path.exists(output_vid):
             st.video(output_vid)
         else:
             st.info("Click 'Process' to generate AI version...")
 
-    if st.button("Generate AI Video"):
+    if st.button("Process"):
                 st.warning("Processing all triplets... this will take a minute.")
                 
                 # --- FFMPEG LOGIC ---
