@@ -27,9 +27,7 @@ def train():
 
     model = model.to(device)
 
-    # --- DEFINED SSIM MODULE INSTEAD OF MSE ---
-    # Note: data_range=1.0 assumes your image tensors are between 0 and 1. 
-    # If your dataset outputs 0-255, change data_range to 255.0
+    # SSIM for error calculation
     ssim_module = SSIM(data_range=1.0, size_average=True, channel=3)
     
     optimizer = optim.Adam(model.parameters(), lr=0.001)
