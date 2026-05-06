@@ -92,8 +92,8 @@ def train():
         print(f"Epoch {epoch+1} Average Loss: {epoch_loss:.6f}")
 
         # Calculate metrics for the last batch of the epoch
-        avg_psnr, avg_ssim = evaluator.calculateBatchMetrics(target, output)
-        evaluator.logEpochData(epoch + 1, epoch_loss, avg_psnr, avg_ssim)
+        avg_psnr, avg_ssim, avg_lpips = evaluator.calculateBatchMetrics(target, output)
+        evaluator.logEpochData(epoch + 1, epoch_loss, avg_psnr, avg_ssim, avg_lpips)
 
         # Save latest weights (for  crash recovery)
         state_to_save = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
