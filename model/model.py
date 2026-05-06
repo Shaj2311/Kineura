@@ -41,6 +41,10 @@ class VideoEnhancementModel(nn.Module):
 
         # final output layer squashes down to 3 RGB channels for the predicted frame
         self.outputLayer = nn.Conv2d(64, 3, kernel_size=1)
+        self.outputLayer = nn.Sequential(
+                nn.Conv2d(64, 3, kernel_size=1),
+                nn.Sigmoid()
+                )
 
     def forward(self, inputTensor):
         # going down
