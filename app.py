@@ -96,26 +96,36 @@ if video_file:
     st.divider()
     # Bottom half: Before and after videos
     st.header("Final Video Comparison")
-    
+
     # We use the same padding logic as the slider to keep portrait videos small
     # [Padding, Original, Predicted, Padding]
-    v_pad_l, v_col1, v_col2, v_pad_r = st.columns([0.5, 1, 1, 0.5])
+    v_pad_l, v_col1, v_col2, v_col3, v_pad_r = st.columns([0.1, 1, 1, 1, 0.1])
 
     output_vid = "ai_processed_video.mp4"
+    broken_vid = "broken_video.mp4"
     # Reset generated video if a new file is uploaded
     if "last_uploaded" not in st.session_state or st.session_state.last_uploaded != video_file.name:
         if os.path.exists(output_vid):
             os.remove(output_vid)
+        if os.path.exists(broken_vid):
+            os.remove(broken_vid)
         st.session_state.last_uploaded = video_file.name
 
     with v_col1:
         st.subheader("Original")
         # Wrapping in a container to maintain a fixed-ish scale
         st.video(video_file)
-        
+
     with v_col2:
+        st.subheader("Broken")
+        if os.path.exists(broken_vid):
+            st.video(broken_vid)
+        else:
+            st.info("Process to see broken version...")
+
+    with v_col3:
         st.subheader("Repaired")
-        
+
         if os.path.exists(output_vid):
             st.video(output_vid)
         else:
@@ -123,65 +133,90 @@ if video_file:
 
     if st.button("Process"):
                 st.warning("Processing all triplets... this will take a minute.")
-                
-                # --- FFMPEG LOGIC ---
+
                 temp_dir = "temp_frames"
+                broken_temp_dir = "temp_broken_frames"
                 os.makedirs(temp_dir, exist_ok=True)
-                
+                os.makedirs(broken_temp_dir, exist_ok=True)
+
                 # Clean old frames
                 for f in os.listdir(temp_dir):
                     os.remove(os.path.join(temp_dir, f))
-                
+                for f in os.listdir(broken_temp_dir):
+                    os.remove(os.path.join(broken_temp_dir, f))
+
                 cap = cv2.VideoCapture("temp_video.mp4")
                 # Get original metadata for correct reconstruction
                 original_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
                 width_orig = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height_orig = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                
+
                 prog_bar = st.progress(0)
                 ret1, prev_frame = cap.read()
                 count = 0
-                
+
                 while True:
                     ret2, curr_frame = cap.read()
                     if not ret2:
                         break
+
+                    # --- BROKEN VIDEO LOGIC ---
+                    # Save the first frame of every triplet
+                    if count == 0:
+                        cv2.imwrite(os.path.join(broken_temp_dir, f"frame_00000.png"), prev_frame)
                     
+                    # For every triplet (0,1,2), frame index 2 is the 'broken' one (every 3rd total frame)
+                    cv2.imwrite(os.path.join(broken_temp_dir, f"frame_{(count*2)+1:05d}.png"), curr_frame)
+                    black_frame = np.zeros((height_orig, width_orig, 3), dtype=np.uint8)
+                    cv2.imwrite(os.path.join(broken_temp_dir, f"frame_{(count*2)+2:05d}.png"), black_frame)
+
                     # 1. Pre-process for model (Resize to landscape 448x256)
                     f1_in = cv2.resize(prev_frame, (448, 256))
                     f2_in = cv2.resize(curr_frame, (448, 256))
-                    
+
                     t1 = torch.from_numpy(cv2.cvtColor(f1_in, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float() / 255.0
                     t2 = torch.from_numpy(cv2.cvtColor(f2_in, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float() / 255.0
-                    
+
                     # 2. Inference
                     inp = torch.cat([t1, t2], dim=0).unsqueeze(0).to('cuda')
                     with torch.no_grad():
                         out = model(inp)
-                    
+
                     # 3. Post-process
                     p_out = out.squeeze(0).permute(1, 2, 0).cpu().numpy()
                     p_out = np.clip(p_out * 255, 0, 255).astype(np.uint8)
                     p_out_bgr = cv2.cvtColor(p_out, cv2.COLOR_RGB2BGR)
-                    
+
                     # --- THE FIX: Resize back to Portrait/Original dimensions ---
                     final_frame = cv2.resize(p_out_bgr, (width_orig, height_orig))
-                    
+
                     # 4. Save frame
-                    cv2.imwrite(os.path.join(temp_dir, f"frame_{count:05d}.png"), final_frame)
-                    
+                    # Repaired video follows same sequence logic to match timings
+                    if count == 0:
+                        cv2.imwrite(os.path.join(temp_dir, f"frame_00000.png"), prev_frame)
+                    cv2.imwrite(os.path.join(temp_dir, f"frame_{(count*2)+1:05d}.png"), curr_frame)
+                    cv2.imwrite(os.path.join(temp_dir, f"frame_{(count*2)+2:05d}.png"), final_frame)
+
                     prev_frame = curr_frame
                     count += 1
                     prog_bar.progress(min(count / total_frames, 1.0))
 
                 cap.release()
-                
+
                 # 5. Use ffmpeg to stitch
+                # Repaired
                 cmd = [
                     'ffmpeg', '-y', '-framerate', str(original_fps), '-i', f'{temp_dir}/frame_%05d.png',
                     '-c:v', 'libx264', '-pix_fmt', 'yuv420p', output_vid
                 ]
                 subprocess.run(cmd, check=True)
-                
+
+                # Broken
+                cmd_broken = [
+                    'ffmpeg', '-y', '-framerate', str(original_fps), '-i', f'{broken_temp_dir}/frame_%05d.png',
+                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', broken_vid
+                ]
+                subprocess.run(cmd_broken, check=True)
+
                 st.success("Video processed successfully!")
                 st.rerun()
