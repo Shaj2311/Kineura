@@ -28,9 +28,28 @@ def evaluateModel(weightsPath='checkpoints/best_weights.pth'):
         state_dict = torch.load(weightsPath, map_location=device)
         new_state_dict = OrderedDict()
         is_model_multi = isinstance(model, torch.nn.DataParallel)
+        
         for k, v in state_dict.items():
-            name = f'module.{k}' if (is_model_multi and not k.startswith('module.')) else (k[7:] if (not is_model_multi and k.startswith('module.')) else k)
+            name = k
+            
+            #Handle Multi-GPU prefix (module.) when reading from weights file
+            if is_model_multi and not name.startswith('module.'):
+                name = f'module.{name}'
+            elif not is_model_multi and name.startswith('module.'):
+                name = name[7:]
+            
+            # Note: Model architecture was changed when switching from MSE to SSIM, causing
+            # a formatting difference in the weights files
+
+            # If loading old weights where outputLayer was a single conv, map them to the 
+            # 0th index of the new nn.Sequential block.
+            if "outputLayer.weight" in name and "outputLayer.0.weight" not in name:
+                name = name.replace("outputLayer.weight", "outputLayer.0.weight")
+            if "outputLayer.bias" in name and "outputLayer.0.bias" not in name:
+                name = name.replace("outputLayer.bias", "outputLayer.0.bias")
+                
             new_state_dict[name] = v
+            
         model.load_state_dict(new_state_dict)
         print(f"Loaded weights from {weightsPath}")
 
@@ -51,7 +70,6 @@ def evaluateModel(weightsPath='checkpoints/best_weights.pth'):
             predictions = model(inputs)
 
             # Record metrics
-
             loss = F.mse_loss(predictions, target)
             totalLoss += loss.item()
 
