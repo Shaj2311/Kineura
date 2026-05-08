@@ -210,14 +210,14 @@ if video_file:
                 # Repaired
                 cmd = [
                     'ffmpeg', '-y', '-framerate', str(original_fps), '-i', f'{temp_dir}/frame_%05d.png',
-                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', output_vid
+                    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', output_vid
                 ]
                 subprocess.run(cmd, check=True)
 
                 # Broken
                 cmd_broken = [
                     'ffmpeg', '-y', '-framerate', str(original_fps), '-i', f'{broken_temp_dir}/frame_%05d.png',
-                    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', broken_vid
+                    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', broken_vid
                 ]
                 subprocess.run(cmd_broken, check=True)
 
