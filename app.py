@@ -156,23 +156,28 @@ if video_file:
                 count = 0
 
                 while True:
-                    ret2, curr_frame = cap.read()
-                    if not ret2:
+                    # Read two consecutive frames for the model
+                    ret1, frame1 = cap.read()
+                    ret2, frame2 = cap.read()
+                    
+                    # Read the 3rd frame just to "skip" it in the original stream
+                    # (This is the frame we are replacing/predicting)
+                    ret3, _ = cap.read() 
+
+                    if not ret1 or not ret2:
                         break
 
                     # --- BROKEN VIDEO LOGIC ---
-                    # Save the first frame of every triplet
-                    if count == 0:
-                        cv2.imwrite(os.path.join(broken_temp_dir, f"frame_00000.png"), prev_frame)
+                    # Save Frame 1, Frame 2, and a Black placeholder
+                    cv2.imwrite(os.path.join(broken_temp_dir, f"frame_{count*3:05d}.png"), frame1)
+                    cv2.imwrite(os.path.join(broken_temp_dir, f"frame_{(count*3)+1:05d}.png"), frame2)
                     
-                    # For every triplet (0,1,2), frame index 2 is the 'broken' one (every 3rd total frame)
-                    cv2.imwrite(os.path.join(broken_temp_dir, f"frame_{(count*2)+1:05d}.png"), curr_frame)
                     black_frame = np.zeros((height_orig, width_orig, 3), dtype=np.uint8)
-                    cv2.imwrite(os.path.join(broken_temp_dir, f"frame_{(count*2)+2:05d}.png"), black_frame)
+                    cv2.imwrite(os.path.join(broken_temp_dir, f"frame_{(count*3)+2:05d}.png"), black_frame)
 
-                    # 1. Pre-process for model (Resize to landscape 448x256)
-                    f1_in = cv2.resize(prev_frame, (448, 256))
-                    f2_in = cv2.resize(curr_frame, (448, 256))
+                    # 1. Pre-process for model
+                    f1_in = cv2.resize(frame1, (448, 256))
+                    f2_in = cv2.resize(frame2, (448, 256))
 
                     t1 = torch.from_numpy(cv2.cvtColor(f1_in, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float() / 255.0
                     t2 = torch.from_numpy(cv2.cvtColor(f2_in, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float() / 255.0
@@ -187,22 +192,20 @@ if video_file:
                     p_out = np.clip(p_out * 255, 0, 255).astype(np.uint8)
                     p_out_bgr = cv2.cvtColor(p_out, cv2.COLOR_RGB2BGR)
 
-                    # --- THE FIX: Resize back to Portrait/Original dimensions ---
+                    # Resize back to original dimensions
                     final_frame = cv2.resize(p_out_bgr, (width_orig, height_orig))
 
-                    # 4. Save frame
-                    # Repaired video follows same sequence logic to match timings
-                    if count == 0:
-                        cv2.imwrite(os.path.join(temp_dir, f"frame_00000.png"), prev_frame)
-                    cv2.imwrite(os.path.join(temp_dir, f"frame_{(count*2)+1:05d}.png"), curr_frame)
-                    cv2.imwrite(os.path.join(temp_dir, f"frame_{(count*2)+2:05d}.png"), final_frame)
+                    # 4. Save frames for Repaired Video
+                    # Save Frame 1, Frame 2, and the AI Prediction
+                    cv2.imwrite(os.path.join(temp_dir, f"frame_{count*3:05d}.png"), frame1)
+                    cv2.imwrite(os.path.join(temp_dir, f"frame_{(count*3)+1:05d}.png"), frame2)
+                    cv2.imwrite(os.path.join(temp_dir, f"frame_{(count*3)+2:05d}.png"), final_frame)
 
-                    prev_frame = curr_frame
                     count += 1
-                    prog_bar.progress(min(count / total_frames, 1.0))
+                    # Update progress based on 3-frame hops
+                    prog_bar.progress(min((count * 3) / total_frames, 1.0))
 
                 cap.release()
-
                 # 5. Use ffmpeg to stitch
                 # Repaired
                 cmd = [
