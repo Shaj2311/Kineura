@@ -3,3 +3,5 @@ data/
 dataset/__pycache__
 __pycache__/
 checkpoints/
+config.bat
+node_modules
